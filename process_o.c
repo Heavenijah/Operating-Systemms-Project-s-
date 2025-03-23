@@ -1,167 +1,302 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "processsimulator.h"
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <algorithm>
+#include <queue>
+#include <climits>
+#include <iomanip>
+#include "processsimulator.h"
 
-#define MAX_PROCESSES 100
 
-typedef struct {
-    int pid;
-    int arrival_time;
-    int burst_time;
-    int priority;
-} Process;
+using namespace std;
 
-void read_processes(Process processes[], int *n) {
-    FILE *file = fopen("processes.txt", "r");
-    if (!file) {
-        perror("Error opening file");
-        exit(1);
+// Function to split a string by delimiter
+vector<string> split(const string& s, char delimiter) {
+    vector<string> tokens;
+    string token;
+    istringstream tokenStream(s);
+    while (getline(tokenStream, token, delimiter)) {
+        tokens.push_back(token);
     }
-
-    char line[100];
-    *n = 0;
-    fgets(line, sizeof(line), file); // Skip header
-    while (fscanf(file, "%d %d %d %d", &processes[*n].pid, &processes[*n].arrival_time, 
-                  &processes[*n].burst_time, &processes[*n].priority) == 4) {
-        (*n)++;
-    }
-    fclose(file);
+    return tokens;
 }
-
-void display_gantt_chart(int process_order[], int start_times[], int num) {
-    printf("\nGantt Chart:\n");
-    for (int i = 0; i < num; i++) {
-        printf("| P%d ", process_order[i]);
-    }
-    printf("|\n");
-
-    for (int i = 0; i < num; i++) {
-        printf("%d    ", start_times[i]);
-    }
-    printf("%d\n", start_times[num - 1]);
+// Function to trim leading and trailing whitespaces
+string trim(const string& s) {
+    size_t start = s.find_first_not_of(" \t");
+    size_t end = s.find_last_not_of(" \t");
+    if (start == string::npos) return "";
+    else return s.substr(start, end - start + 1);
 }
-
-void fcfs_scheduling(Process processes[], int n) {
-    int waiting_time[MAX_PROCESSES] = {0}, turnaround_time[MAX_PROCESSES] = {0};
-    int completion_time[MAX_PROCESSES], process_order[MAX_PROCESSES], start_times[MAX_PROCESSES];
-    int total_wt = 0, total_tat = 0;
-
-    // Step 1: Sort processes by arrival time
-    for (int i = 0; i < n - 1; i++) {
-        for (int j = i + 1; j < n; j++) {
-            if (processes[j].arrival_time < processes[i].arrival_time) {
-                Process temp = processes[i];
-                processes[i] = processes[j];
-                processes[j] = temp;
-            }
+// Function to read processes from file
+vector<Process> readProcesses(const string& filename) {
+    vector<Process> processes;
+    ifstream file(filename);
+    string line;
+    // Check if file is open
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << filename << endl;
+        return processes;
+    }
+// Skip first two lines
+    getline(file, line);
+    getline(file, line);
+    
+    while (getline(file, line)) {
+        if (line.empty()) continue;
+        vector<string> parts = split(line, '|');
+        if (parts.size() < 5) continue;
+        // Parse process details
+        try {
+            Process p;
+            p.pid = stoi(trim(parts[1]));
+            p.arrivalTime = stoi(trim(parts[2]));
+            p.burstTime = stoi(trim(parts[3]));
+            p.priority = stoi(trim(parts[4]));
+            processes.push_back(p);
+        } catch (const exception& e) {
+            cerr << "Error parsing line: " << line << endl;
         }
     }
-
-    // Step 2: Calculate completion, waiting, and turnaround times
-    int time = processes[0].arrival_time;
-    for (int i = 0; i < n; i++) {
-        if (time < processes[i].arrival_time) {
-            time = processes[i].arrival_time; // Idle time
-        }
-
-        start_times[i] = time;
-        process_order[i] = processes[i].pid;
-
-        completion_time[i] = time + processes[i].burst_time;
-        waiting_time[i] = time - processes[i].arrival_time;
-        turnaround_time[i] = waiting_time[i] + processes[i].burst_time;
-
-        total_wt += waiting_time[i];
-        total_tat += turnaround_time[i];
-
-        time += processes[i].burst_time;
-    }
-
-    // Step 3: Display Gantt Chart
-    display_gantt_chart(process_order, start_times, n);
-
-    // Step 4: Display results
-    printf("\nProcess\tArrival\tBurst\tWT\tTAT\n");
-    for (int i = 0; i < n; i++) {
-        printf("P%d\t%d\t%d\t%d\t%d\n", processes[i].pid, processes[i].arrival_time, 
-               processes[i].burst_time, waiting_time[i], turnaround_time[i]);
-    }
-    printf("\nAverage WT: %.2f\n", (float)total_wt / n);
-    printf("Average TAT: %.2f\n", (float)total_tat / n);
+    return processes;
 }
-
-void sjf_scheduling(Process processes[], int n) {
-    int waiting_time[MAX_PROCESSES] = {0}, turnaround_time[MAX_PROCESSES] = {0};
-    int completed[MAX_PROCESSES] = {0}, process_order[MAX_PROCESSES], start_times[MAX_PROCESSES];
-    int total_wt = 0, total_tat = 0, current_time = 0, completed_count = 0;
-
-    while (completed_count < n) {
-        int shortest_job = -1;
-        for (int i = 0; i < n; i++) {
-            if (!completed[i] && processes[i].arrival_time <= current_time) {
-                if (shortest_job == -1 || processes[i].burst_time < processes[shortest_job].burst_time) {
-                    shortest_job = i;
+// function to display Gantt chart
+void displayGantt(const vector<GanttEntry>& gantt) {
+    if (gantt.empty()) {
+        cout << "Gantt chart is empty.\n";
+        return;
+    }
+    // display Gantt chart
+    cout << "Gantt Chart:\n";
+    for (const auto& entry : gantt) {
+        cout << "P" << entry.pid << " | ";
+    }
+    cout << "\n";
+    // display timeline
+    vector<int> timeline;
+    timeline.push_back(gantt[0].start);
+    for (const auto& entry : gantt) {
+        timeline.push_back(entry.end);
+    }
+    
+    for (const auto& time : timeline) {
+        cout << time << " ";
+    }
+    cout << "\n" << endl;
+} 
+// function to perform First Come First Serve (FCFS) scheduling
+SchedulingResult fcfs(vector<Process> processes) {
+    sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.arrivalTime < b.arrivalTime;
+    });
+    
+    int currentTime = 0;
+    vector<GanttEntry> gantt;
+    float totalWT = 0, totalTAT = 0;
+    // iterate through processes
+    for (auto& p : processes) {
+        int start = max(currentTime, p.arrivalTime);
+        int end = start + p.burstTime;
+        gantt.push_back({p.pid, start, end});
+        p.waitingTime = start - p.arrivalTime;
+        p.turnaroundTime = end - p.arrivalTime;
+        totalWT += p.waitingTime;
+        totalTAT += p.turnaroundTime;
+        currentTime = end;
+    }
+    // return scheduling result
+    SchedulingResult res;
+    res.gantt = gantt;
+    res.processes = processes;
+    res.avgWT = totalWT / processes.size();
+    res.avgTAT = totalTAT / processes.size();
+    return res;
+}
+// function to perform Shortest Job First (SJF) scheduling
+SchedulingResult sjf(vector<Process> processes) {
+    int n = processes.size();
+    vector<bool> completed(n, false);
+    int currentTime = 0;
+    vector<GanttEntry> gantt;
+    float totalWT = 0, totalTAT = 0;
+    // iterate through processes until all are completed 
+    while (true) {
+        int idx = -1;
+        int shortestBurst = INT_MAX;
+        for (int i = 0; i < n; ++i) {
+            if (!completed[i] && processes[i].arrivalTime <= currentTime) {
+                if (processes[i].burstTime < shortestBurst) {
+                    shortestBurst = processes[i].burstTime;
+                    idx = i;
+                } else if (processes[i].burstTime == shortestBurst) {
+                    if (processes[i].arrivalTime < processes[idx].arrivalTime) {
+                        idx = i;
+                    } else if (processes[i].arrivalTime == processes[idx].arrivalTime && processes[i].pid < processes[idx].pid) {
+                        idx = i;
+                    }
                 }
             }
         }
-
-        if (shortest_job == -1) {
-            current_time++; // Idle time
+        
+        if (idx == -1) {
+            int minArrival = INT_MAX;
+            for (int i = 0; i < n; ++i) {
+                if (!completed[i]) {
+                    minArrival = min(minArrival, processes[i].arrivalTime);
+                }
+            }
+            if (minArrival == INT_MAX) break;
+            currentTime = minArrival;
             continue;
         }
-
-        int idx = completed_count;
-        process_order[idx] = processes[shortest_job].pid;
-        start_times[idx] = current_time;
-
-        waiting_time[shortest_job] = current_time - processes[shortest_job].arrival_time;
-        turnaround_time[shortest_job] = waiting_time[shortest_job] + processes[shortest_job].burst_time;
-
-        total_wt += waiting_time[shortest_job];
-        total_tat += turnaround_time[shortest_job];
-
-        current_time += processes[shortest_job].burst_time;
-        completed[shortest_job] = 1;
-        completed_count++;
+        // update process details
+        Process& p = processes[idx];
+        int start = currentTime;
+        int end = start + p.burstTime;
+        gantt.push_back({p.pid, start, end});
+        p.waitingTime = start - p.arrivalTime;
+        p.turnaroundTime = end - p.arrivalTime;
+        totalWT += p.waitingTime;
+        totalTAT += p.turnaroundTime;
+        completed[idx] = true;
+        currentTime = end;
     }
-
-    // Display Gantt Chart
-    display_gantt_chart(process_order, start_times, n);
-
-    // Display results
-    printf("\nProcess\tArrival\tBurst\tWT\tTAT\n");
-    for (int i = 0; i < n; i++) {
-        printf("P%d\t%d\t%d\t%d\t%d\n", processes[i].pid, processes[i].arrival_time, 
-               processes[i].burst_time, waiting_time[i], turnaround_time[i]);
+    // return scheduling result
+    SchedulingResult res;
+    res.gantt = gantt;
+    res.processes = processes;
+    res.avgWT = totalWT / n;
+    res.avgTAT = totalTAT / n;
+    return res;
+}
+// function to perform Round Robin scheduling
+SchedulingResult roundRobin(vector<Process> processes, int quantum) {
+    int n = processes.size();
+    vector<int> remainingTime(n);
+    for (int i = 0; i < n; ++i) {
+        remainingTime[i] = processes[i].burstTime;
     }
-    printf("\nAverage WT: %.2f\n", (float)total_wt / n);
-    printf("Average TAT: %.2f\n", (float)total_tat / n);
+    // perform Round Robin scheduling
+    queue<int> q;
+    vector<bool> inQueue(n, false);
+    int currentTime = 0;
+    int completed = 0;
+    vector<GanttEntry> gantt;
+    float totalWT = 0, totalTAT = 0;
+    
+    vector<int> indices(n);
+    for (int i = 0; i < n; ++i) indices[i] = i;// sort processes by arrival time
+    sort(indices.begin(), indices.end(), [&](int a, int b) {
+        return processes[a].arrivalTime < processes[b].arrivalTime;
+    }); // iterate through processes
+    
+    int nextIdx = 0;
+    while (completed < n) {
+        while (nextIdx < n && processes[indices[nextIdx]].arrivalTime <= currentTime) {
+            int i = indices[nextIdx];
+            if (!inQueue[i]) {
+                q.push(i);
+                inQueue[i] = true;
+            }
+            nextIdx++;
+        }
+        // checks if queue is empty
+        if (q.empty()) {
+            if (nextIdx >= n) break;
+            currentTime = processes[indices[nextIdx]].arrivalTime;
+            continue;
+        }
+        
+        int idx = q.front();
+        q.pop();
+        inQueue[idx] = false;
+        // executes process
+        int execTime = min(quantum, remainingTime[idx]);
+        gantt.push_back({processes[idx].pid, currentTime, currentTime + execTime});
+        remainingTime[idx] -= execTime;
+        currentTime += execTime;
+        // checks if process is completed
+        while (nextIdx < n && processes[indices[nextIdx]].arrivalTime <= currentTime) {
+            int i = indices[nextIdx];
+            if (!inQueue[i]) {
+                q.push(i);
+                inQueue[i] = true;
+            }
+            nextIdx++;
+        }
+        
+        if (remainingTime[idx] > 0) {
+            q.push(idx);
+            inQueue[idx] = true;
+        } else {
+            completed++; // update process details
+            processes[idx].completionTime = currentTime;
+            processes[idx].turnaroundTime = currentTime - processes[idx].arrivalTime; // calculates waiting time
+            processes[idx].waitingTime = processes[idx].turnaroundTime - processes[idx].burstTime; // updates total waiting time and turnaround time
+            totalWT += processes[idx].waitingTime; // updates total waiting time and turnaround time
+            totalTAT += processes[idx].turnaroundTime; // updates total waiting time and turnaround time
+        }
+    }
+    // returns scheduling result
+    SchedulingResult res;
+    res.gantt = gantt;
+    res.processes = processes;
+    res.avgWT = totalWT / n;
+    res.avgTAT = totalTAT / n;
+    return res;
 }
 
+// Main function
 int main() {
-    Process processes[MAX_PROCESSES];
-    int n, choice;
-
-    read_processes(processes, &n);
-
-    printf("Select Scheduling Algorithm:\n");
-    printf("1. First-Come, First-Served (FCFS)\n");
-    printf("2. Shortest Job First (SJF)\n");
-    printf("Enter choice: ");
-    scanf("%d", &choice);
-
+    string filename = "processes.txt";
+    vector<Process> processes = readProcesses(filename);
+    // check if processes are read - if the file is there or not
+    if (processes.empty()) {
+        cerr << "No processes read. Check the input file." << endl;
+        return 1;
+    }
+    // display scheduling algorithm options
+    cout << "Select a scheduling algorithm:\n\n";
+    cout << "1. FCFS\n2. SJF\n3. Round Robin\n";
+    int choice;
+    cin >> choice;
+    // performs scheduling 
+    SchedulingResult result;
     switch (choice) {
         case 1:
-            printf("\nExecuting FCFS Scheduling...\n");
-            fcfs_scheduling(processes, n);
+            result = fcfs(processes);
             break;
         case 2:
-            printf("\nExecuting SJF Scheduling...\n");
-            sjf_scheduling(processes, n);
+            result = sjf(processes);
             break;
+        case 3: {
+            int quantum;
+            cout << "Enter time quantum: ";
+            cin >> quantum;
+            result = roundRobin(processes, quantum);
+            break;
+        }
         default:
-            printf("Invalid choice! Exiting...\n");
+            cout << "Invalid choice." << endl;
+            return 1;
     }
-
+    
+    displayGantt(result.gantt);
+    
+    sort(result.processes.begin(), result.processes.end(), [](const Process& a, const Process& b) {
+        return a.pid < b.pid;
+    });
+    
+    cout << "Process\tWaiting Time\tTurnaround Time\n";
+    for (const auto& p : result.processes) {
+        cout << "P" << p.pid << "\t" << p.waitingTime << "\t\t" << p.turnaroundTime << endl;
+    }
+    
+    cout << fixed << setprecision(2);
+    cout << "\nAverage Waiting Time: " << result.avgWT << endl;
+    cout << "Average Turnaround Time: " << result.avgTAT << endl;
+    
     return 0;
 }
